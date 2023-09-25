@@ -296,6 +296,22 @@ class PersistentResourceConfig:
             The cluster name of the remote job. This value may be up to 63
             characters, and valid characters are `[a-z0-9_-]`. The first character
             cannot be a number or hyphen.
+        machine_type (str):
+            The type of machine to use for remote training.
+        accelerator_type (str):
+            Hardware accelerator type. One of ACCELERATOR_TYPE_UNSPECIFIED,
+            NVIDIA_TESLA_A100, NVIDIA_TESLA_P100, NVIDIA_TESLA_V100,
+            NVIDIA_TESLA_K80, NVIDIA_TESLA_T4, NVIDIA_TESLA_P4
+        accelerator_count (int):
+            The number of accelerators to attach to a worker replica.
+        resource_pool_specs (vertexai.preview.developer.remote_specs.ResourcePoolSpecs):
+            The worker pool specs configuration for a remote job.
     """
 
     name: Optional[str] = None
+    machine_type: Optional[str] = None
+    accelerator_type: Optional[str] = None
+    accelerator_count: Optional[int] = None
+    resource_pools: Optional[
+        "vertexai.preview.developer.remote_specs.ResourcePool"  # noqa: F821
+    ] = None

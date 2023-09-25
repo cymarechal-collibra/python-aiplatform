@@ -26,14 +26,18 @@ import cloudpickle
 from google.api_core import exceptions
 from google.cloud import aiplatform
 from google.cloud.aiplatform import utils
-from google.cloud.aiplatform.compat.services import job_service_client
-from google.cloud.aiplatform.compat.types import (
-    custom_job as gca_custom_job_compat,
+from google.cloud.aiplatform.compat.services import (
+    job_service_client_v1beta1 as job_service_client,
 )
-from google.cloud.aiplatform.compat.types import execution as gca_execution
-from google.cloud.aiplatform.compat.types import io as gca_io_compat
 from google.cloud.aiplatform.compat.types import (
-    job_state as gca_job_state_compat,
+    custom_job_v1beta1 as gca_custom_job_compat,
+)
+from google.cloud.aiplatform.compat.types import (
+    execution_v1beta1 as gca_execution,
+)
+from google.cloud.aiplatform.compat.types import io_v1beta1 as gca_io_compat
+from google.cloud.aiplatform.compat.types import (
+    job_state_v1beta1 as gca_job_state_compat,
 )
 from google.cloud.aiplatform.compat.types import (
     tensorboard as gca_tensorboard,
@@ -246,6 +250,20 @@ _TEST_DEFAULT_TENSORBOARD_GCA = gca_tensorboard.Tensorboard(
     is_default=True,
 )
 
+_TEST_PERSISTENT_RESOURCE_ID = "test-cluster"
+_TEST_PERSISTENT_RESOURCE_CONFIG = configs.PersistentResourceConfig(
+    name=_TEST_PERSISTENT_RESOURCE_ID,
+    resource_pools=[
+        remote_specs.ResourcePool(
+            replica_count=1,
+        ),
+        remote_specs.ResourcePool(
+            machine_type="n1-standard-8",
+            replica_count=2,
+        ),
+    ],
+)
+
 
 @pytest.fixture
 def list_default_tensorboard_mock():
@@ -277,6 +295,7 @@ def _get_custom_job_proto(
     model=None,
     user_requirements=False,
     custom_commands=False,
+    persistent_resource_id=None,
 ):
     job = copy.deepcopy(_TEST_CUSTOM_JOB_PROTO)
     if display_name:
@@ -388,6 +407,8 @@ def _get_custom_job_proto(
         env.append(
             {"name": metadata_constants.ENV_EXPERIMENT_RUN_KEY, "value": experiment_run}
         )
+    if persistent_resource_id:
+        job.job_spec.persistent_resource_id = persistent_resource_id
     job.labels = ({"trained_by_vertex_ai": "true"},)
     return job
 
@@ -1738,3 +1759,103 @@ class TestRemoteTraining:
         service_account = training._get_service_account(config, autolog=False)
 
         assert service_account is None
+
+    @pytest.mark.usefixtures(
+        "mock_timestamped_unique_name",
+        "mock_get_custom_job",
+        "mock_autolog_disabled",
+        "persistent_resource_running_mock",
+    )
+    def test_remote_training_sklearn_with_persistent_cluster(
+        self,
+        mock_any_serializer_sklearn,
+        mock_create_custom_job,
+    ):
+        vertexai.init(
+            project=_TEST_PROJECT,
+            location=_TEST_LOCATION,
+            staging_bucket=_TEST_BUCKET_NAME,
+        )
+        vertexai.preview.init(remote=True, cluster=_TEST_PERSISTENT_RESOURCE_CONFIG)
+
+        LogisticRegression = vertexai.preview.remote(_logistic.LogisticRegression)
+        model = LogisticRegression()
+
+        model.fit(_X_TRAIN, _Y_TRAIN)
+
+        # check that model is serialized correctly
+        mock_any_serializer_sklearn.return_value.serialize.assert_any_call(
+            to_serialize=model,
+            gcs_path=os.path.join(_TEST_REMOTE_JOB_BASE_PATH, "input/input_estimator"),
+        )
+
+        # check that args are serialized correctly
+        mock_any_serializer_sklearn.return_value.serialize.assert_any_call(
+            to_serialize=_X_TRAIN,
+            gcs_path=os.path.join(_TEST_REMOTE_JOB_BASE_PATH, "input/X"),
+        )
+        mock_any_serializer_sklearn.return_value.serialize.assert_any_call(
+            to_serialize=_Y_TRAIN,
+            gcs_path=os.path.join(_TEST_REMOTE_JOB_BASE_PATH, "input/y"),
+        )
+
+        # ckeck that CustomJob is created correctly
+        expected_custom_job = _get_custom_job_proto(
+            persistent_resource_id=_TEST_PERSISTENT_RESOURCE_ID,
+        )
+        mock_create_custom_job.assert_called_once_with(
+            parent=_TEST_PARENT,
+            custom_job=expected_custom_job,
+            timeout=None,
+        )
+
+        # check that trained model is deserialized correctly
+        mock_any_serializer_sklearn.return_value.deserialize.assert_has_calls(
+            [
+                mock.call(
+                    os.path.join(_TEST_REMOTE_JOB_BASE_PATH, "output/output_estimator")
+                ),
+                mock.call(
+                    os.path.join(_TEST_REMOTE_JOB_BASE_PATH, "output/output_data")
+                ),
+            ]
+        )
+
+        # change to `vertexai.preview.init(remote=False)` to use local prediction
+        vertexai.preview.init(remote=False)
+
+        # check that local model is updated in place
+        # `model.score` raises NotFittedError if the model is not updated
+        model.score(_X_TEST, _Y_TEST)
+
+    @pytest.mark.usefixtures(
+        "list_default_tensorboard_mock",
+        "mock_get_experiment_run",
+        "mock_get_metadata_store",
+        "get_artifact_not_found_mock",
+        "update_context_mock",
+        "aiplatform_autolog_mock",
+        "mock_autolog_enabled",
+        "persistent_resource_running_mock",
+    )
+    def test_remote_training_sklearn_with_persistent_cluster_and_experiment_error(
+        self,
+    ):
+        vertexai.init(
+            project=_TEST_PROJECT,
+            location=_TEST_LOCATION,
+            staging_bucket=_TEST_BUCKET_NAME,
+            experiment=_TEST_EXPERIMENT,
+        )
+        vertexai.preview.init(
+            remote=True, autolog=True, cluster=_TEST_PERSISTENT_RESOURCE_CONFIG
+        )
+
+        vertexai.preview.start_run(_TEST_EXPERIMENT_RUN, resume=True)
+        LogisticRegression = vertexai.preview.remote(_logistic.LogisticRegression)
+        model = LogisticRegression()
+
+        with pytest.raises(ValueError) as e:
+            model.fit.vertex.remote_config.service_account = "GCE"
+            model.fit(_X_TRAIN, _Y_TRAIN)
+        e.match(regexp=r"Persistent cluster currently does not support autologging.")
