@@ -1840,6 +1840,7 @@ class _ForecastingTrainingJob(_TrainingJob):
         window_stride_length: Optional[int] = None,
         window_max_count: Optional[int] = None,
         holiday_regions: Optional[List[str]] = None,
+        enable_probabilistic_inference: bool = False,
         sync: bool = True,
         create_request_timeout: Optional[float] = None,
     ) -> models.Model:
@@ -2076,6 +2077,15 @@ class _ForecastingTrainingJob(_TrainingJob):
                     EMEA: Europe, the Middle East and Africa
                     LAC: Latin America and the Caribbean
                   Third level: countries from ISO 3166-1 Country codes.
+            enable_probabilistic_inference (bool):
+                If probabilistic inference is enabled, the model will fit a
+                distribution that captures the uncertainty of a prediction. At
+                inference time, the predictive distribution is used to make a
+                point prediction that minimizes the optimization objective. For
+                example, the mean of a predictive distribution is the point
+                prediction that minimizes RMSE loss. If quantiles are specified,
+                then the quantiles of the distribution are also returned. The
+                optimization objective cannot be minimize-quantile-loss.
             sync (bool):
                 Whether to execute this method synchronously. If False, this method
                 will be executed in concurrent Future and any downstream object will
@@ -2146,6 +2156,7 @@ class _ForecastingTrainingJob(_TrainingJob):
             window_stride_length=window_stride_length,
             window_max_count=window_max_count,
             holiday_regions=holiday_regions,
+            enable_probabilistic_inference=enable_probabilistic_inference,
             sync=sync,
             create_request_timeout=create_request_timeout,
         )
@@ -2191,6 +2202,7 @@ class _ForecastingTrainingJob(_TrainingJob):
         window_stride_length: Optional[int] = None,
         window_max_count: Optional[int] = None,
         holiday_regions: Optional[List[str]] = None,
+        enable_probabilistic_inference: bool = False,
         sync: bool = True,
         create_request_timeout: Optional[float] = None,
     ) -> models.Model:
@@ -2321,11 +2333,12 @@ class _ForecastingTrainingJob(_TrainingJob):
                 [export_evaluated_data_items_bigquery_destination_uri] is specified.
             quantiles (List[float]):
                 Quantiles to use for the `minimize-quantile-loss`
-                [AutoMLForecastingTrainingJob.optimization_objective]. This argument is required in
-                this case.
+                [AutoMLForecastingTrainingJob.optimization_objective]. This
+                argument is required in this case. Quantiles may also optionally
+                be used if probabilistic inference is enabled.
 
-                Accepts up to 5 quantiles in the form of a double from 0 to 1, exclusive.
-                Each quantile must be unique.
+                Accepts up to 5 quantiles in the form of a double from 0 to 1,
+                exclusive. Each quantile must be unique.
             validation_options (str):
                 Validation options for the data validation component. The available options are:
                 "fail-pipeline" - (default), will validate against the validation and fail the pipeline
@@ -2432,6 +2445,15 @@ class _ForecastingTrainingJob(_TrainingJob):
                     EMEA: Europe, the Middle East and Africa
                     LAC: Latin America and the Caribbean
                   Third level: countries from ISO 3166-1 Country codes.
+            enable_probabilistic_inference (bool):
+                If probabilistic inference is enabled, the model will fit a
+                distribution that captures the uncertainty of a prediction. At
+                inference time, the predictive distribution is used to make a
+                point prediction that minimizes the optimization objective. For
+                example, the mean of a predictive distribution is the point
+                prediction that minimizes RMSE loss. If quantiles are specified,
+                then the quantiles of the distribution are also returned. The
+                optimization objective cannot be minimize-quantile-loss.
             sync (bool):
                 Whether to execute this method synchronously. If False, this method
                 will be executed in concurrent Future and any downstream object will
@@ -2466,8 +2488,18 @@ class _ForecastingTrainingJob(_TrainingJob):
             max_count=window_max_count,
         )
 
-        # TODO(b/244643824): Replace additional experiments with a new job arg.
-        enable_probabilistic_inference = self._convert_enable_probabilistic_inference()
+        # Probabilistic inference flag should be removed from additional
+        # experiments in all cases since it is only an additional experiment in
+        # the SDK. If both are set, always prefer job arg for setting the field.
+        # TODO(b/244643824): Deprecate probabilistic inference in additional
+        # experiment and only use job arg.
+        additional_experiment_probabilistic_inference = (
+            self._convert_enable_probabilistic_inference()
+        )
+        if not enable_probabilistic_inference:
+            enable_probabilistic_inference = (
+                additional_experiment_probabilistic_inference
+            )
 
         training_task_inputs_dict = {
             # required inputs
