@@ -24,6 +24,7 @@ import os
 import pathlib
 import pickle
 import shutil
+import sys
 import tempfile
 from typing import Any, Dict, Optional, Union
 import uuid
@@ -1118,8 +1119,16 @@ class BigframeSerializer(serializers_base.Serializer):
         **kwargs,
     ) -> str:
         # All bigframe serializers will be identical (bigframes.dataframe.DataFrame --> parquet)
+        detected_framework = kwargs.get("framework")
+        # Throw error for Python 3.11 + Bigframes Torch
+        if detected_framework == "torch" and sys.version_info[1] == 11:
+            raise ValueError(
+                "Currently Bigframes Torch serializer does not support"
+                "Python 3.11 since torcharrow is not supported on Python 3.11."
+            )
+
         # Record the framework in metadata for deserialization
-        BigframeSerializer._metadata.framework = kwargs.get("framework")
+        BigframeSerializer._metadata.framework = detected_framework
         if not _is_valid_gcs_path(gcs_path):
             raise ValueError(f"Invalid gcs path: {gcs_path}")
 
