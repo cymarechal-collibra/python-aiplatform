@@ -67,6 +67,7 @@ featurestore_extra_require = [
 ]
 pipelines_extra_require = [
     "pyyaml==5.3.1",
+    "google-cloud-artifact-registry >= 1.8.0, <2.0.0",
 ]
 datasets_extra_require = [
     "pyarrow >= 3.0.0, < 8.0dev; python_version<'3.11'",

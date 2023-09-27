@@ -214,6 +214,29 @@ class PipelineJob(
             project=project, location=location
         )
 
+        # If it's an Artifact Registry URI with a tag, we need to replace the tag with the version due to how the pipeline service handles auth
+        # See https://github.com/googleapis/python-aiplatform/issues/2398
+        if re.match(_VALID_AR_URL, template_path):
+            from google.cloud import artifactregistry_v1
+
+            if "sha256" not in template_path.split("/")[-1]:
+                template_uri_prefix = template_path.split("kfp.pkg.dev/")[0]
+                ar_region = template_uri_prefix.split("//")[1][:-1]
+                ar_project, ar_repo, ar_package, ar_tag = template_path.split("kfp.pkg.dev/")[1].split("/")
+                tag_name = (
+                    f"projects/{ar_project}/locations/{ar_region}/repositories/{ar_repo}/packages/{ar_package}/tags/{ar_tag}"
+                )
+
+                ar_client = artifactregistry_v1.ArtifactRegistryClient(
+                    credentials=self.credentials
+                )
+                req = artifactregistry_v1.GetTagRequest(name=tag_name)
+                response = ar_client.get_tag(req)
+                print(response)
+                version = response.version
+                template_path = f"{template_uri_prefix}kfp.pkg.dev/{version}"
+                print(template_path)
+
         # this loads both .yaml and .json files because YAML is a superset of JSON
         pipeline_json = yaml_utils.load_yaml(
             template_path, self.project, self.credentials
