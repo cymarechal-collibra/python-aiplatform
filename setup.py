@@ -136,6 +136,8 @@ testing_extra_require = (
     full_extra_require
     + profiler_extra_require
     + [
+        "absl-py >= 1.4.0",
+        "bigframes; python_version>='3.11'",
         "grpcio-testing",
         "ipython",
         "kfp",
@@ -143,7 +145,7 @@ testing_extra_require = (
         "pytest-asyncio",
         "pytest-xdist",
         "scikit-learn",
-        "tensorflow >=2.3.0, <= 2.12.0",
+        "tensorflow >= 2.3.0, <= 2.12.0",
         "torch >= 2.0.0; python_version>='3.8'",
         "torch; python_version<'3.8'",
         "xgboost",
